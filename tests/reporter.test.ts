@@ -114,14 +114,47 @@ describe("reporters", () => {
   });
 
   it("renders sarif report", () => {
-    const sarif = formatSarifReport(sampleResult);
+    const sarif = formatSarifReport({
+      ...sampleResult,
+      findings: sampleResult.findings.map((finding) => ({
+        ...finding,
+        uri: "examples/insecure.json",
+        line: 3,
+        column: 3
+      }))
+    });
     const parsed = JSON.parse(sarif) as {
       version: string;
-      runs: Array<{ results: Array<{ ruleId: string }> }>;
+      runs: Array<{
+        results: Array<{
+          ruleId: string;
+          locations: Array<{
+            physicalLocation: {
+              artifactLocation: { uri: string };
+              region: { startLine: number; startColumn: number };
+            };
+          }>;
+        }>;
+      }>;
     };
 
     expect(parsed.version).toBe("2.1.0");
     expect(parsed.runs[0]?.results[0]?.ruleId).toBe("PERM-001");
+    expect(
+      parsed.runs[0]?.results[0]?.locations[0]?.physicalLocation.artifactLocation.uri
+    ).toBe("examples/insecure.json");
+    expect(parsed.runs[0]?.results[0]?.locations[0]?.physicalLocation.region).toMatchObject({
+      startLine: 3,
+      startColumn: 3
+    });
+  });
+
+  it("omits sarif locations for findings without a precise source region", () => {
+    const parsed = JSON.parse(formatSarifReport(sampleResult)) as {
+      runs: Array<{ results: Array<{ locations?: unknown }> }>;
+    };
+
+    expect(parsed.runs[0]?.results[0]).not.toHaveProperty("locations");
   });
 
   it("renders markdown report with severity counts and AI metadata", () => {

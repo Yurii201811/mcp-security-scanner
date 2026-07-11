@@ -150,6 +150,9 @@ Each `Finding` object:
 | `description` | `string` | Detailed explanation |
 | `recommendation` | `string` | Actionable remediation text |
 | `path` | `string \| undefined` | Optional JSON path to the risky config key |
+| `uri` | `string \| undefined` | Source file URI for findings with a precise local location |
+| `line` | `number \| undefined` | One-based source line for findings from local JSON or YAML files |
+| `column` | `number \| undefined` | One-based source column for findings from local JSON or YAML files |
 | `source` | `"deterministic" \| "ai" \| undefined` | Finding source, present for AI findings |
 | `confidence` | `"low" \| "medium" \| "high" \| undefined` | Confidence level for AI findings |
 | `evidence` | `string[] \| undefined` | Evidence snippets for AI findings |

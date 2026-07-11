@@ -7,9 +7,18 @@ export interface Finding {
   description: string;
   recommendation: string;
   path?: string;
+  uri?: string;
+  line?: number;
+  column?: number;
   source?: "deterministic" | "ai";
   confidence?: "low" | "medium" | "high";
   evidence?: string[];
+}
+
+export interface SourceDocument {
+  uri: string;
+  text: string;
+  config: unknown;
 }
 
 export interface ScanResult {

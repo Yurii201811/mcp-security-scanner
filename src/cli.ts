@@ -2,9 +2,7 @@
 
 import { Command } from "commander";
 import fs from "node:fs";
-import { createRequire } from "node:module";
 import path from "node:path";
-import yaml from "js-yaml";
 import {
   formatJsonReport,
   formatMarkdownReport,
@@ -26,9 +24,9 @@ import {
   runAiReview
 } from "./ai/reviewer.js";
 import type { AiProviderName, AiReviewOptions } from "./ai/types.js";
+import { loadTarget } from "./target.js";
 
 const program = new Command();
-const require = createRequire(import.meta.url);
 
 program
   .name("mcp-security-scanner")
@@ -76,7 +74,7 @@ function registerScanLikeCommand(name: string, description: string): void {
       ) => {
         try {
           const input = loadTarget(configPath, options.server);
-          const result = scanMcpConfig(input.target, input.config);
+          const result = scanMcpConfig(input.target, input.config, input.sources);
 
           if (options.aiReview) {
             try {
@@ -140,86 +138,6 @@ function parseAiProvider(input: string): AiProviderName {
   }
 
   throw new Error(`Unsupported AI provider: ${input}. Use ollama or mock.`);
-}
-
-function parseConfig(filePath: string, raw: string): unknown {
-  const ext = path.extname(filePath).toLowerCase();
-
-  if (ext === ".yaml" || ext === ".yml") {
-    return yaml.load(raw);
-  }
-
-  return JSON.parse(raw) as unknown;
-}
-
-function loadTarget(
-  configPath: string | undefined,
-  serverPackage: string | undefined
-): { target: string; config: unknown } {
-  if (configPath && serverPackage) {
-    throw new Error("Use either [configPath] or --server, not both.");
-  }
-
-  if (!configPath && !serverPackage) {
-    throw new Error("Provide [configPath] or --server <package>.");
-  }
-
-  if (serverPackage) {
-    return loadServerPackage(serverPackage);
-  }
-
-  const absolutePath = path.resolve(process.cwd(), configPath as string);
-  const raw = fs.readFileSync(absolutePath, "utf8");
-  const config = parseConfig(absolutePath, raw);
-  return { target: configPath as string, config };
-}
-
-function loadServerPackage(serverPackage: string): { target: string; config: unknown } {
-  const packageJsonPath = require.resolve(`${serverPackage}/package.json`, {
-    paths: [process.cwd()]
-  });
-  const packageDir = path.dirname(packageJsonPath);
-  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8")) as Record<
-    string,
-    unknown
-  >;
-
-  const embeddedConfig = loadEmbeddedConfig(packageDir);
-  const readmePath = path.join(packageDir, "README.md");
-  const readme = fs.existsSync(readmePath) ? fs.readFileSync(readmePath, "utf8") : undefined;
-
-  return {
-    target: `server:${serverPackage}`,
-    config: {
-      ...packageJson,
-      ...embeddedConfig,
-      readme
-    }
-  };
-}
-
-function loadEmbeddedConfig(packageDir: string): Record<string, unknown> {
-  const candidates = [
-    "mcp.json",
-    "mcp.config.json",
-    "server.json",
-    "mcp.yaml",
-    "mcp.yml"
-  ];
-
-  for (const fileName of candidates) {
-    const fullPath = path.join(packageDir, fileName);
-    if (fs.existsSync(fullPath)) {
-      const raw = fs.readFileSync(fullPath, "utf8");
-      const parsed = parseConfig(fullPath, raw);
-      if (parsed && typeof parsed === "object") {
-        return parsed as Record<string, unknown>;
-      }
-      return {};
-    }
-  }
-
-  return {};
 }
 
 function parseFormat(input: string): ReportFormat {

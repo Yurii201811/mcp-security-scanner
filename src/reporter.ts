@@ -174,20 +174,23 @@ export function formatSarifReport(result: ScanResult): string {
           message: {
             text: `${finding.title}: ${finding.description}`
           },
-          locations: [
-            {
-              physicalLocation: {
-                artifactLocation: {
-                  uri: result.target
-                },
-                region: {
-                  snippet: {
-                    text: finding.path ?? "root"
+          ...(finding.uri && finding.line
+            ? {
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: {
+                        uri: finding.uri
+                      },
+                      region: {
+                        startLine: finding.line,
+                        startColumn: finding.column ?? 1
+                      }
+                    }
                   }
-                }
+                ]
               }
-            }
-          ]
+            : {})
         }))
       }
     ]
