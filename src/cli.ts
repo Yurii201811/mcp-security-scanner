@@ -26,6 +26,7 @@ import {
   runAiReview
 } from "./ai/reviewer.js";
 import type { AiProviderName, AiReviewOptions } from "./ai/types.js";
+import { initScannerConfig, SCANNER_CONFIG_FILENAME } from "./scannerConfig.js";
 
 const program = new Command();
 const require = createRequire(import.meta.url);
@@ -35,10 +36,30 @@ program
   .description("The npm-audit for MCP servers")
   .version("0.2.0");
 
+registerInitCommand();
 registerScanLikeCommand("scan", "Scan an MCP config file or server package");
 registerScanLikeCommand("audit", "Audit MCP risk posture with explainable findings");
 
 program.parse();
+
+function registerInitCommand(): void {
+  program
+    .command("init")
+    .description(`Create ${SCANNER_CONFIG_FILENAME} in the current directory`)
+    .option("-f, --force", "Overwrite an existing scanner config")
+    .action((options: { force?: boolean }) => {
+      try {
+        const result = initScannerConfig({ force: options.force });
+        const verb = result.overwritten ? "Overwrote" : "Created";
+        console.log(`${verb} ${SCANNER_CONFIG_FILENAME}`);
+        process.exitCode = 0;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error(`Init failed: ${message}`);
+        process.exitCode = 1;
+      }
+    });
+}
 
 function registerScanLikeCommand(name: string, description: string): void {
   program

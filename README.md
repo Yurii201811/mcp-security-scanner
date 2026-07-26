@@ -14,6 +14,12 @@ Scan MCP servers for dangerous tools, prompt-injection risks, excessive permissi
 npx mcp-security-scanner scan ./mcp-server-config.json
 ```
 
+Create a versioned project scanner config:
+
+```bash
+npx mcp-security-scanner init
+```
+
 Add it to CI:
 
 ```yaml
@@ -66,6 +72,8 @@ npm run build
 ## Usage
 
 ```bash
+mcp-security-scanner init
+mcp-security-scanner init --force
 mcp-security-scanner scan ./mcp-server-config.json
 mcp-security-scanner scan ./mcp-server-config.yaml
 mcp-security-scanner scan --server @modelcontextprotocol/server-filesystem
@@ -77,6 +85,40 @@ mcp-security-scanner scan ./mcp-server-config.json --fail-on critical
 mcp-security-scanner scan ./mcp-server-config.json --fail-on none
 mcp-security-scanner scan ./mcp-server-config.json --ai-review
 ```
+
+### Project scanner config
+
+`mcp-security-scanner init` creates `.mcp-security-scanner.json` in the current
+directory. It refuses to replace an existing file; pass `--force` only when you
+intend to overwrite it.
+
+```json
+{
+  "schemaVersion": "1.0.0",
+  "failOn": "high",
+  "suppressions": [],
+  "aiReview": {
+    "enabled": false,
+    "provider": "ollama",
+    "model": "qwen3:1.7b"
+  }
+}
+```
+
+Config fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `schemaVersion` | `string` | Version of the project scanner config schema. |
+| `failOn` | `critical \| high \| medium \| low \| none` | Finding severity threshold for a failing scan. |
+| `suppressions` | `ScannerSuppression[]` | Rule suppressions with `ruleId`, optional `target`, and required `reason`. |
+| `output.format` | `text \| json \| sarif \| markdown` | Optional default report format. |
+| `output.file` | `string` | Optional default report path. |
+| `aiReview.enabled` | `boolean` | Whether optional local AI review is enabled. |
+| `aiReview.provider` | `ollama \| mock` | Local AI review provider. |
+| `aiReview.model` | `string` | Model name passed to the provider. |
+| `aiReview.endpoint` | `string` | Optional provider endpoint override. |
+| `aiReview.timeoutMs` | `number` | Optional positive timeout in milliseconds. |
 
 Formats:
 
