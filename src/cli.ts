@@ -5,6 +5,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import yaml from "js-yaml";
+import { discoverProjectMcpConfigs } from "./discovery.js";
 import {
   formatJsonReport,
   formatMarkdownReport,
@@ -30,6 +31,30 @@ import type { AiProviderName, AiReviewOptions } from "./ai/types.js";
 const program = new Command();
 const require = createRequire(import.meta.url);
 
+interface ScanCommandOptions {
+  server?: string;
+  discover?: boolean;
+  format: string;
+  output?: string;
+  failOn: FailOnThreshold;
+  aiReview?: boolean;
+  aiProvider: string;
+  aiModel: string;
+  aiEndpoint: string;
+  aiTimeoutMs: string;
+}
+
+interface ScanInput {
+  target: string;
+  config: unknown;
+}
+
+interface SarifDocument {
+  $schema: string;
+  version: string;
+  runs: unknown[];
+}
+
 program
   .name("mcp-security-scanner")
   .description("The npm-audit for MCP servers")
@@ -46,6 +71,10 @@ function registerScanLikeCommand(name: string, description: string): void {
     .description(description)
     .argument("[configPath]", "Path to MCP config (JSON or YAML)")
     .option("-s, --server <package>", "NPM package name of an MCP server")
+    .option(
+      "--discover",
+      "Scan supported MCP config files in the current project root"
+    )
     .option("-f, --format <format>", "Output format: text|json|sarif|markdown", "text")
     .option("-o, --output <file>", "Write report to file")
     .option(
@@ -62,40 +91,54 @@ function registerScanLikeCommand(name: string, description: string): void {
     .action(
       async (
         configPath: string | undefined,
-        options: {
-          server?: string;
-          format: string;
-          output?: string;
-          failOn: FailOnThreshold;
-          aiReview?: boolean;
-          aiProvider: string;
-          aiModel: string;
-          aiEndpoint: string;
-          aiTimeoutMs: string;
-        }
+        options: ScanCommandOptions
       ) => {
         try {
-          const input = loadTarget(configPath, options.server);
-          const result = scanMcpConfig(input.target, input.config);
+          const inputs = loadTargets(
+            configPath,
+            options.server,
+            Boolean(options.discover)
+          );
+          if (options.discover) {
+            printDiscoveredTargets(inputs);
+          }
 
-          if (options.aiReview) {
-            try {
-              const findings = await runAiReview(
-                {
-                  target: input.target,
-                  config: input.config
-                },
-                parseAiReviewOptions(options)
-              );
-              result.findings.push(...findings);
-            } catch (error) {
-              const message = error instanceof Error ? error.message : String(error);
-              console.error(`Warning: AI review failed: ${message}`);
+          const results = [];
+          for (const input of inputs) {
+            const result = scanMcpConfig(input.target, input.config);
+
+            if (options.aiReview) {
+              try {
+                const findings = await runAiReview(
+                  {
+                    target: input.target,
+                    config: input.config
+                  },
+                  parseAiReviewOptions(options)
+                );
+                result.findings.push(...findings);
+              } catch (error) {
+                const message =
+                  error instanceof Error ? error.message : String(error);
+                const targetContext = options.discover
+                  ? ` for ${input.target}`
+                  : "";
+                console.error(
+                  `Warning: AI review failed${targetContext}: ${message}`
+                );
+              }
+            }
+
+            results.push(result);
+            if (options.discover) {
+              console.error(`Scanned MCP config: ${input.target}`);
             }
           }
 
           const format = parseFormat(options.format);
-          const output = renderByFormat(format, result);
+          const output = options.discover
+            ? renderDiscoveredByFormat(format, results)
+            : renderByFormat(format, results[0]!);
 
           if (options.output) {
             const outPath = path.resolve(process.cwd(), options.output);
@@ -106,7 +149,7 @@ function registerScanLikeCommand(name: string, description: string): void {
           }
 
           process.exitCode = exitCodeForFindings(
-            result.findings,
+            results.flatMap((result) => result.findings),
             options.failOn
           );
         } catch (error) {
@@ -116,6 +159,42 @@ function registerScanLikeCommand(name: string, description: string): void {
         }
       }
     );
+}
+
+function loadTargets(
+  configPath: string | undefined,
+  serverPackage: string | undefined,
+  discover: boolean
+): ScanInput[] {
+  if (!discover) {
+    return [loadTarget(configPath, serverPackage)];
+  }
+
+  if (configPath || serverPackage) {
+    throw new Error(
+      "Use --discover by itself, not with [configPath] or --server."
+    );
+  }
+
+  const cwd = process.cwd();
+  return discoverProjectMcpConfigs(cwd).map((absolutePath) => {
+    const relativePath =
+      path.relative(cwd, absolutePath) || path.basename(absolutePath);
+    return loadTarget(relativePath, undefined);
+  });
+}
+
+function printDiscoveredTargets(inputs: ScanInput[]): void {
+  if (inputs.length === 0) {
+    console.error(
+      "No supported MCP config files discovered in the current project root."
+    );
+    return;
+  }
+
+  for (const input of inputs) {
+    console.error(`Discovered MCP config: ${input.target}`);
+  }
 }
 
 function parseAiReviewOptions(options: {
@@ -244,4 +323,40 @@ function renderByFormat(format: ReportFormat, result: ReturnType<typeof scanMcpC
   }
 
   return formatReport(result);
+}
+
+function renderDiscoveredByFormat(
+  format: ReportFormat,
+  results: Array<ReturnType<typeof scanMcpConfig>>
+): string {
+  if (format === "json") {
+    return JSON.stringify(results, null, 2);
+  }
+
+  if (format === "sarif") {
+    return combineSarifReports(results);
+  }
+
+  const separator = format === "markdown" ? "\n\n---\n\n" : "\n\n";
+  return results
+    .map((result) => renderByFormat(format, result))
+    .join(separator);
+}
+
+function combineSarifReports(
+  results: Array<ReturnType<typeof scanMcpConfig>>
+): string {
+  const documents = results.map(
+    (result) => JSON.parse(formatSarifReport(result)) as SarifDocument
+  );
+
+  const combined: SarifDocument = {
+    $schema:
+      documents[0]?.$schema ??
+      "https://json.schemastore.org/sarif-2.1.0.json",
+    version: documents[0]?.version ?? "2.1.0",
+    runs: documents.flatMap((document) => document.runs)
+  };
+
+  return JSON.stringify(combined, null, 2);
 }

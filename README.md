@@ -66,6 +66,7 @@ npm run build
 ## Usage
 
 ```bash
+mcp-security-scanner scan --discover
 mcp-security-scanner scan ./mcp-server-config.json
 mcp-security-scanner scan ./mcp-server-config.yaml
 mcp-security-scanner scan --server @modelcontextprotocol/server-filesystem
@@ -84,6 +85,23 @@ Formats:
 - `json`: machine-readable full scan result (see [JSON Schema](#json-schema))
 - `markdown`: paste-ready report for PR comments, issue notes, and audit summaries
 - `sarif`: SARIF 2.1.0 report for code scanning tools
+
+### Project-local MCP config discovery
+
+Run `mcp-security-scanner scan --discover` to scan supported MCP config files
+directly in the current project root:
+
+- `mcp.json`
+- `mcp.config.json`
+- `.mcp.json`
+
+Discovery checks only those three explicit paths. It does not recurse into
+subdirectories or crawl home, editor, or agent directories. Missing files are
+skipped without an error. Progress lines identify every discovered and
+successfully scanned file.
+
+For machine-readable discovery output, JSON is an array of scan reports and
+SARIF combines one run per config into a single SARIF log.
 
 CI failure threshold:
 
